@@ -1,0 +1,387 @@
+\documentclass[11pt,a4paper]{article}
+
+% --- Packages ---
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage[margin=2.2cm]{geometry}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{fancyhdr}
+\usepackage{tcolorbox}
+\usepackage{booktabs}
+\usepackage{titlesec}
+
+% --- Couleurs Personnalisées ---
+\definecolor{primaryblue}{RGB}{0, 75, 140}
+\definecolor{sparkorange}{RGB}{226, 86, 0}
+\definecolor{codebg}{RGB}{248, 249, 250}
+\definecolor{codeframe}{RGB}{220, 224, 230}
+\definecolor{commentgreen}{RGB}{46, 139, 87}
+\definecolor{keywordblue}{RGB}{0, 0, 205}
+\definecolor{stringred}{RGB}{178, 34, 34}
+
+% --- Configuration Listings (Java & Bash) ---
+\lstdefinestyle{customjava}{
+    language=Java,
+    backgroundcolor=\color{codebg},
+    basicstyle=\ttfamily\footnotesize,
+    keywordstyle=\color{keywordblue}\bfseries,
+    stringstyle=\color{stringred},
+    commentstyle=\color{commentgreen}\itshape,
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    stepnumber=1,
+    numbersep=8pt,
+    tabsize=2,
+    showspaces=false,
+    showstringspaces=false,
+    breaklines=true,
+    breakatwhitespace=true,
+    frame=single,
+    rulecolor=\color{codeframe}
+}
+
+\lstdefinestyle{custombash}{
+    language=bash,
+    backgroundcolor=\color{codebg},
+    basicstyle=\ttfamily\footnotesize,
+    keywordstyle=\color{primaryblue}\bfseries,
+    commentstyle=\color{commentgreen}\itshape,
+    frame=single,
+    rulecolor=\color{codeframe},
+    breaklines=true
+}
+
+% --- En-tête et Pied de page ---
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\textcolor{primaryblue}{\textbf{TP 3 : Apache Spark \& Traitement Distribué}}}
+\fancyhead[R]{\thepage}
+\fancyfoot[C]{\footnotesize Big Data Frameworks -- Master / 5\textsuperscript{ème} Année}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=primaryblue,
+    urlcolor=sparkorange,
+    citecolor=primaryblue
+}
+
+% --- Titre du Document ---
+\title{
+    \vspace{-1.5cm}
+    \begin{tcolorbox}[colback=primaryblue,colframe=primaryblue,arc=3mm,center]
+        \centering \color{white}
+        \LARGE \textbf{RAPPORT DE TRAVAUX PRATIQUES : TP 3} \\[0.3cm]
+        \large \textbf{Installation d'Apache Spark, Intégration Hadoop et Applications Distribuées en Java}
+    \end{tcolorbox}
+    \vspace{-0.5cm}
+}
+\author{\textbf{Module :} Traitement Massif de Données / Big Data \\ \textbf{Architecture :} Cluster Distribué (Master M1, Workers M2 \& M3)}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\vspace{-0.5cm}
+\tableofcontents
+\vspace{0.5cm}
+\hrule
+\vspace{0.8cm}
+
+% =========================================================================
+\section{Introduction et Architecture du Cluster}
+% =========================================================================
+
+Ce TP a pour objectif le déploiement complet d'un cluster \textbf{Apache Spark 3.2.1} en mode \textit{Standalone} interconnecté avec le système de fichiers distribué \textbf{Hadoop HDFS 3.3.6}. Nous implémentons des solutions distribuées en Java exploitant à la fois l'API \textbf{RDD} (Spark Core) et l'API \textbf{DataFrame / Spark SQL}.
+
+L'architecture matérielle virtualisée repose sur 3 nœuds en conteneurs Docker :
+\begin{itemize}
+    \item \textbf{M1 (hadoop-master) :} Nœud Maître hébergeant le \textit{Master Spark}, ainsi que le \textit{NameNode} et le \textit{ResourceManager} Hadoop.
+    \item \textbf{M2 (hadoop-worker1) :} Nœud Esclave hébergeant un \textit{Worker Spark}, un \textit{DataNode} et un \textit{NodeManager}.
+    \item \textbf{M3 (hadoop-worker2) :} Nœud Esclave hébergeant un second \textit{Worker Spark}, un \textit{DataNode} et un \textit{NodeManager}.
+\end{itemize}
+
+% =========================================================================
+\section{Étapes d'Installation et Configuration}
+% =========================================================================
+
+\subsection{Étape 1 : Téléchargement et Déploiement de Spark}
+Sur les trois machines (M1, M2, M3), l'archive officielle de Spark 3.2.1 a été déployée dans \texttt{/opt/spark} :
+\begin{lstlisting}[style=custombash]
+tar -xzf spark-3.2.1-bin-hadoop3.2.tgz -C /opt/
+mv /opt/spark-3.2.1-bin-hadoop3.2 /opt/spark
+\end{lstlisting}
+
+Les variables d'environnement ont été définies dans \texttt{\textasciitilde/.bashrc} et appliquées via \texttt{source \textasciitilde/.bashrc} :
+\begin{lstlisting}[style=custombash]
+export SPARK_HOME=/opt/spark
+export PATH=$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH
+export HADOOP_CONF_DIR=$HADOOP_HOME/etc/hadoop
+export SPARK_DIST_CLASSPATH=$($HADOOP_HOME/bin/hadoop classpath)
+\end{lstlisting}
+
+\subsection{Étape 2 : Configuration du Cluster (\texttt{spark-defaults.conf} et \texttt{workers})}
+Sur le Master M1, nous avons configuré les paramètres de fonctionnement dans \texttt{/opt/spark/conf/spark-defaults.conf} :
+\begin{lstlisting}[style=custombash]
+spark.master                     spark://hadoop-master:7077
+spark.submit.deployMode          client
+spark.driver.memory              512m
+spark.executor.memory            512m
+spark.executor.cores             1
+spark.hadoop.fs.defaultFS        hdfs://hadoop-master:8020
+spark.driver.host                hadoop-master
+spark.sql.shuffle.partitions     2
+\end{lstlisting}
+
+Le fichier \texttt{/opt/spark/conf/workers} liste les deux nœuds de travail :
+\begin{lstlisting}[style=custombash]
+hadoop-worker1
+hadoop-worker2
+\end{lstlisting}
+
+\subsection{Étape 3 : Démarrage des Services et Validation}
+Le cluster a été démarré à l'aide des scripts officiels :
+\begin{itemize}
+    \item Sur M1 : \texttt{\$SPARK\_HOME/sbin/start-master.sh}
+    \item Sur M2 et M3 : \texttt{\$SPARK\_HOME/sbin/start-worker.sh spark://hadoop-master:7077}
+\end{itemize}
+
+La commande \texttt{jps} confirme l'activation des démons sur chaque nœud :
+\begin{itemize}
+    \item \textbf{M1 :} \texttt{Master}, \texttt{NameNode}, \texttt{SecondaryNameNode}, \texttt{ResourceManager}.
+    \item \textbf{M2 \& M3 :} \texttt{Worker}, \texttt{DataNode}, \texttt{NodeManager}.
+\end{itemize}
+L'interface Web accessible sur \texttt{http://localhost:8080} affiche l'état \textbf{ALIVE} avec \textbf{2 Alive Workers}.
+
+% =========================================================================
+\section{Exercice 1 : Traitement de Texte avec Spark Core (RDD)}
+% =========================================================================
+
+\subsection{Objectifs}
+L'exercice 1 requiert le développement d'une application en Java pour :
+\begin{enumerate}
+    \item Calculer la fréquence d'apparition de chaque mot dans un fichier texte.
+    \item Dénombrer le nombre de mots de chaque longueur distincte présente dans le texte.
+\end{enumerate}
+
+\subsection{Code Source Java (\texttt{Exercice1.java})}
+\begin{lstlisting}[style=customjava]
+package tp3;
+
+import org.apache.spark.SparkConf;
+import org.apache.spark.api.java.JavaPairRDD;
+import org.apache.spark.api.java.JavaRDD;
+import org.apache.spark.api.java.JavaSparkContext;
+import scala.Tuple2;
+
+import java.util.Arrays;
+
+public class Exercice1 {
+    public static void main(String[] args) {
+        if (args.length < 2) {
+            System.err.println("Usage: Exercice1 <input_file> <output_dir>");
+            System.exit(1);
+        }
+
+        String inputFile = args[0];
+        String outputDir = args[1];
+
+        SparkConf conf = new SparkConf().setAppName("TP3-Exercice1");
+        JavaSparkContext sc = new JavaSparkContext(conf);
+
+        // 1. Lecture du fichier texte depuis HDFS
+        JavaRDD<String> lines = sc.textFile(inputFile);
+
+        // Nettoyage et tokenisation
+        JavaRDD<String> words = lines
+            .flatMap(line -> Arrays.asList(line.split("\\s+")).iterator())
+            .map(word -> word.replaceAll("[^a-zA-Z0-9]", "").toLowerCase().trim())
+            .filter(word -> !word.isEmpty());
+
+        // Question 1 : Frequence de chaque mot
+        JavaPairRDD<String, Integer> wordCounts = words
+            .mapToPair(word -> new Tuple2<>(word, 1))
+            .reduceByKey(Integer::sum);
+
+        wordCounts.saveAsTextFile(outputDir + "/word_frequency");
+
+        // Question 2 : Nombre de mots par longueur
+        JavaPairRDD<Integer, Integer> lengthCounts = words
+            .mapToPair(word -> new Tuple2<>(word.length(), 1))
+            .reduceByKey(Integer::sum);
+
+        lengthCounts.saveAsTextFile(outputDir + "/word_length_count");
+
+        sc.stop();
+    }
+}
+\end{lstlisting}
+
+\subsection{Exécution et Résultats HDFS}
+La commande de soumission distribuée :
+\begin{lstlisting}[style=custombash]
+spark-submit --class tp3.Exercice1 \
+  --master spark://hadoop-master:7077 \
+  /opt/Lab/tp3.jar \
+  hdfs://hadoop-master:8020/tp3/input/texte.txt \
+  hdfs://hadoop-master:8020/tp3/output
+\end{lstlisting}
+
+\subsubsection{Résultats obtenus pour la Fréquence des Mots (\texttt{word\_frequency})}
+\begin{center}
+\begin{tabular}{lc|lc|lc}
+\toprule
+\textbf{Mot} & \textbf{Fréquence} & \textbf{Mot} & \textbf{Fréquence} & \textbf{Mot} & \textbf{Fréquence} \\
+\midrule
+\texttt{spark}      & 3 & \texttt{analytics}  & 1 & \texttt{scala}      & 1 \\
+\texttt{apache}     & 2 & \texttt{engine}     & 1 & \texttt{python}     & 1 \\
+\texttt{is}         & 2 & \texttt{unified}    & 1 & \texttt{java}       & 1 \\
+\texttt{and}        & 2 & \texttt{scale}      & 1 & \texttt{provides}   & 1 \\
+\texttt{data}       & 1 & \texttt{processing} & 1 & \texttt{apis}       & 1 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsubsection{Résultats obtenus pour le Nombre de Mots par Longueur (\texttt{word\_length\_count})}
+\begin{center}
+\begin{tabular}{cc|cc}
+\toprule
+\textbf{Longueur du mot (caractères)} & \textbf{Nombre total de mots} & \textbf{Longueur du mot (caractères)} & \textbf{Nombre total de mots} \\
+\midrule
+1  & 2 & 6  & 4 \\
+2  & 3 & 7  & 3 \\
+3  & 3 & 8  & 1 \\
+4  & 5 & 9  & 1 \\
+5  & 7 & 10 & 1 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+% =========================================================================
+\section{Exercice 2 : Traitement Structuré avec Spark SQL}
+% =========================================================================
+
+\subsection{Objectifs}
+L'exercice 2 porte sur un ensemble de données CSV contenant la structure suivante :
+\begin{center}
+\texttt{(NCE, nom, prénom, spécialité, niveau, groupe, moyenne)}
+\end{center}
+Les questions à résoudre sont :
+\begin{enumerate}
+    \item Compter le nombre d'étudiants par groupe.
+    \item Compter le nombre d'étudiants par spécialité.
+    \item Calculer la moyenne générale par niveau et spécialité.
+\end{enumerate}
+
+\subsection{Code Source Java (\texttt{Exercice2.java})}
+\begin{lstlisting}[style=customjava]
+package tp3;
+
+import org.apache.spark.sql.Dataset;
+import org.apache.spark.sql.Row;
+import org.apache.spark.sql.SparkSession;
+import static org.apache.spark.sql.functions.avg;
+
+public class Exercice2 {
+    public static void main(String[] args) {
+        if (args.length < 1) {
+            System.err.println("Usage: Exercice2 <csv_file>");
+            System.exit(1);
+        }
+
+        String csvPath = args[0];
+
+        SparkSession spark = SparkSession.builder()
+                .appName("TP3-Exercice2-Etudiants")
+                .getOrCreate();
+
+        // Chargement du fichier CSV avec deduction automatique des types
+        Dataset<Row> df = spark.read()
+                .option("header", "true")
+                .option("inferSchema", "true")
+                .csv(csvPath);
+
+        System.out.println("==========================================");
+        // 1. Nombre d'etudiants par groupe
+        System.out.println("1. Nombre d'etudiants par groupe :");
+        df.groupBy("groupe").count().show();
+
+        // 2. Nombre d'etudiants par specialite
+        System.out.println("2. Nombre d'etudiants par specialite :");
+        df.groupBy("specialite").count().show();
+
+        // 3. Moyenne generale par niveau et specialite
+        System.out.println("3. Moyenne generale par niveau et specialite :");
+        df.groupBy("niveau", "specialite")
+          .agg(avg("moyenne").alias("moyenne_generale"))
+          .show();
+        System.out.println("==========================================");
+
+        spark.stop();
+    }
+}
+\end{lstlisting}
+
+\subsection{Exécution et Réponses aux Questions}
+La soumission du job est effectuée avec la commande :
+\begin{lstlisting}[style=custombash]
+spark-submit --class tp3.Exercice2 \
+  --master spark://hadoop-master:7077 \
+  /opt/Lab/tp3.jar \
+  hdfs://hadoop-master:8020/tp3/input/etudiants.csv
+\end{lstlisting}
+
+\subsubsection{1. Nombre d'étudiants par groupe}
+\begin{center}
+\begin{tabular}{|c|c|}
+\hline
+\textbf{groupe} & \textbf{count} \\
+\hline
+1 & 3 \\
+2 & 3 \\
+\hline
+\end{tabular}
+\end{center}
+
+\subsubsection{2. Nombre d'étudiants par spécialité}
+\begin{center}
+\begin{tabular}{|c|c|}
+\hline
+\textbf{specialite} & \textbf{count} \\
+\hline
+DSI & 3 \\
+SEM & 3 \\
+\hline
+\end{tabular}
+\end{center}
+
+\subsubsection{3. Moyenne générale par niveau et spécialité}
+\begin{center}
+\begin{tabular}{|c|c|c|}
+\hline
+\textbf{niveau} & \textbf{specialite} & \textbf{moyenne\_generale} \\
+\hline
+3 & DSI & 14.0 \\
+2 & SEM & 10.5 \\
+3 & SEM & 13.5 \\
+\hline
+\end{tabular}
+\end{center}
+
+% =========================================================================
+\section{Conclusion}
+% =========================================================================
+
+Ce TP a mis en évidence l'efficacité et la flexibilité d'Apache Spark dans un environnement distribué :
+\begin{itemize}
+    \item L'intégration native avec \textbf{Hadoop HDFS} permet un découpage automatique des blocs et une localité des données optimale.
+    \item L'API bas niveau \textbf{RDD} offre un contrôle précis sur les transformations personnalisées (Word Count et longueurs de mots).
+    \item L'API haut niveau \textbf{Spark SQL (DataFrame)} optimise automatiquement les plans d'exécution via le moteur Catalyst pour les agrégations relationnelles (groupements et moyennes sur les étudiants).
+\end{itemize}
+
+\end{document}
+
