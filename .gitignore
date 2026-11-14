@@ -1,0 +1,10 @@
+classes/
+tp3/classes/
+*.class
+*.jar
+*.tgz
+*.tar.gz
+*.pyc
+__pycache__/
+generate_doc.py
+generate_screenshots.py
